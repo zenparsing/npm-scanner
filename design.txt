@@ -1,0 +1,22 @@
+== NPM Scanner ==
+
+The purpose of this library is to perform static analysis on packages
+stored in the NPM registry.  The actual analysis will be provided by
+the calling application.
+
+The analyzing framework will perform the following steps:
+
+- Does the target directory have a package.json?  If not, then do "npm init".
+- Does a package index already exist?  If not, then:
+  - Download the JSON document at https://registry.npmjs.org/-/all
+  - Create an index of package names.
+- Select a package at random from the index which has not been previously
+  selected.
+- Do "npm install" to fetch the latest version of that package.
+- 
+
+== Considerations ==
+
+- Should this library parse the code before calling the user-defined function?
+- Some NPM packages are not even javascript at all.  Crazy-pants, I know.
+  But we'll need to somehow filter out non-javascript packages.
