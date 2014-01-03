@@ -261,6 +261,14 @@ export class NpmScanner {
         }
         
         var packageFolder = Path.join(this.folder, "package");
+        
+        this.log(`Clearing old archive files`);
+        
+        await traverseFileSystem(this.folder, path => {
+        
+            if ((/\.tar\.gz$/i).test(path))
+                await AsyncFS.unlink(path);
+        });
     
         this.log(`Clearing package folder [${ packageFolder }]`);
     
@@ -269,9 +277,6 @@ export class NpmScanner {
     
         this.log(`Unpacking archive [${ archive }]`);
         await unpack(archive, packageFolder);
-        
-        this.log(`Removing archive file`);
-        await wipeout(archive);
         
         this.log(`Processing package [${ realName }]`);
         var result = await this.processPackage(realName, packageFolder);
