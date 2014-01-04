@@ -70,6 +70,12 @@ async http(method, url, options) {
         
         var request = makeRequest(requestInfo, response => {
 
+            if (response.statusCode !== 200) {
+            
+                reject(new Error(`HTTP ${ response.statusCode }: ${ HTTP.STATUS_CODES[response.statusCode] }`));
+                return;
+            }
+            
             if (options.file) {
             
                 if (Path.basename(options.file) === "*")
@@ -105,7 +111,7 @@ async unpack(path, dest) {
     
     return new Promise((resolve, reject) => {
     
-        var child = spawn("tar", ["xvfz", path], {
+        var child = spawn("tar", ["xfz", path], {
 
             cwd: dest,
             env: process.env,
@@ -114,7 +120,7 @@ async unpack(path, dest) {
 
         child.on("exit", code => {
 
-            if (code) reject(code);
+            if (code) reject(new Error(`tar command exited with error code ${ code }`));
             else resolve(code);
         });
     });
@@ -177,8 +183,8 @@ export class NpmScanner {
                 return;
         
             // Prefix with a dot if the package name is an integer.  This will
-            // force Node to maintain the correct enumeration order in the
-            // resulting object.
+            // force V8 to maintain the correct enumeration order in the resulting 
+            // object.
             
             if (key | 0 == key)
                 key = "." + key;
@@ -219,7 +225,8 @@ export class NpmScanner {
         // Remove leading dot from key name to get the real package name
         var realName = name.replace(/^\./, "");
         
-        this.log(`Processing package ${ realName }`);
+        var pct = this.position / this.packageList.length * 100 | 0;
+        this.log(`Processing package ${ realName } (${ this.position } of ${ this.packageList.length } - ${ pct }%)`);
         
         var infoURL = `https://registry.npmjs.org/${ realName }/latest`;
         this.log(`Downloading package metadata [${ infoURL }]`);
@@ -244,6 +251,14 @@ export class NpmScanner {
             throw x;
         }
         
+        this.log(`Clearing old archive files`);
+        
+        await traverseFileSystem(this.folder, path => {
+        
+            if ((/\.t(ar\.)?gz$/i).test(path))
+                await AsyncFS.unlink(path);
+        });
+        
         this.log(`Downloading package archive [${ tarball }]`);
         var archive = null;
         
@@ -261,14 +276,6 @@ export class NpmScanner {
         }
         
         var packageFolder = Path.join(this.folder, "package");
-        
-        this.log(`Clearing old archive files`);
-        
-        await traverseFileSystem(this.folder, path => {
-        
-            if ((/\.tar\.gz$/i).test(path))
-                await AsyncFS.unlink(path);
-        });
     
         this.log(`Clearing package folder [${ packageFolder }]`);
     
@@ -278,13 +285,15 @@ export class NpmScanner {
         this.log(`Unpacking archive [${ archive }]`);
         await unpack(archive, packageFolder);
         
-        this.log(`Processing package [${ realName }]`);
+        this.log(`Analyzing package`);
         var result = await this.processPackage(realName, packageFolder);
         
         if (result === void 0)
             result = {};
             
         this.data[name] = result;
+        
+        this.log(`Analysis complete`);
         
         return true;
     }
@@ -300,7 +309,7 @@ export class NpmScanner {
         this.log(`Attempting to read index file [${ path }]`);
         
         // Attempt to read the index file
-        try { content = await AsyncFS.readFile(path) }
+        try { content = await AsyncFS.readFile(path, { encoding: "utf8" }) }
         catch (x) { }
         
         // If the index does not exist, then attempt to initialize the folder
@@ -328,7 +337,7 @@ export class NpmScanner {
     
     async processPackage(name, path) {
     
-        var data = {};
+        var data = this.createPackageData();
         
         await traverseFileSystem(path, path => {
         
@@ -364,6 +373,7 @@ export class NpmScanner {
         if (!this.data)
             throw new Error("Package index not loaded");
         
+        this.log(`Resetting package data`);
         Object.keys(this.data).forEach(key => this.data[key] = null);
     }
     
@@ -371,13 +381,9 @@ export class NpmScanner {
     
         console.log(msg);
     }
-}
-
-export async main() {
-
-    var scanner = new NpmScanner("_modulespec");
     
-    await scanner.open();
-    await scanner.next();
-    await scanner.close();
+    createPackageData() {
+    
+        return {};
+    }
 }
