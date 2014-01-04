@@ -25,7 +25,7 @@ async traverseFileSystem(path, fn) {
 
 async wipeout(path) {
 
-    return traverseFileSystem(path, path => { 
+    await traverseFileSystem(path, path => { 
     
         var stat;
         
@@ -225,8 +225,8 @@ export class NpmScanner {
         // Remove leading dot from key name to get the real package name
         var realName = name.replace(/^\./, "");
         
-        var pct = this.position / this.packageList.length * 100 | 0;
-        this.log(`Processing package ${ realName } (${ this.position } of ${ this.packageList.length } - ${ pct }%)`);
+        var pct = (this.position / this.packageList.length * 100).toPrecision(1);
+        this.log(`Processing package ${ realName } (${ this.position } of ${ this.packageList.length }, ${ pct }%)`);
         
         var infoURL = `https://registry.npmjs.org/${ realName }/latest`;
         this.log(`Downloading package metadata [${ infoURL }]`);

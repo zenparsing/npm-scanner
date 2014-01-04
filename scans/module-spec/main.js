@@ -97,7 +97,7 @@ class Scanner extends NpmScanner {
         
         try {
         
-            ast = parseScript("function m() { " + text.replace(SHEBANG, "") + " }");
+            ast = parseScript("function m() { \n" + text.replace(SHEBANG, "") + "\n }");
             
         } catch (x) {
         
@@ -157,6 +157,19 @@ export async main() {
     
     await scanner.open();
     
+    if (arg === "reset!") {
+    
+        scanner.reset();
+        await scanner.close();
+        return;
+    }
+    
+    if (arg === "report") {
+    
+        await report(scanner.data);
+        return;
+    }
+    
     try {
     
         for (var i = 0; i < count; ++i) {
@@ -168,5 +181,55 @@ export async main() {
     } finally {
     
         await scanner.close();
+    }
+}
+
+async report(data) {
+
+    var sum = {
+    
+        modules: 0,
+        platform: 0,
+        absolute: 0,
+        relative: 0,
+        package: 0,
+        parseErrors: 0
+    };
+    
+    var packages = 0;
+    
+    Object.keys(data).forEach(key => {
+    
+        var item = data[key];
+        
+        if (!item || !item.modules)
+            return;
+    
+        packages += 1;
+        sum.modules += item.modules;
+        sum.platform += item.platform;
+        sum.absolute += item.absolute;
+        sum.relative += item.relative;
+        sum.package += item.package;
+        sum.parseErrors += item.parseErrors;
+    });
+    
+    var allPackage = sum.platform + sum.package;
+    var total = sum.platform + sum.package + sum.relative + sum.absolute;
+    
+    console.log(`\n=== Module Specifier Analysis ===\n`);
+    console.log(`Packages Scanned: ${ packages }`);
+    console.log(`Modules Scanned: ${ sum.modules }`);
+    console.log(`Average Modules per Package: ${ sum.modules / packages | 0 }`);
+    console.log(`Parse Errors: ${ sum.parseErrors }`);
+    console.log(`Relative: ${ formatCount(sum.relative) }`);
+    console.log(`System: ${ formatCount(sum.platform) }`);
+    console.log(`Package: ${ formatCount(sum.package) }`);
+    console.log(`Non-Relative: ${ formatCount(sum.platform + sum.package) }`);
+    console.log('');
+    
+    function formatCount(n) {
+        
+        return `${ n } (${ n / total * 100 | 0 }%)`;
     }
 }
