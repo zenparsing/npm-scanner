@@ -225,7 +225,7 @@ export class NpmScanner {
         // Remove leading dot from key name to get the real package name
         var realName = name.replace(/^\./, "");
         
-        var pct = (this.position / this.packageList.length * 100).toPrecision(1);
+        var pct = (this.position / this.packageList.length * 100).toFixed(1);
         this.log(`Processing package ${ realName } (${ this.position } of ${ this.packageList.length }, ${ pct }%)`);
         
         var infoURL = `https://registry.npmjs.org/${ realName }/latest`;
@@ -247,7 +247,10 @@ export class NpmScanner {
             this.log(`Unable to retrieve metadata for package [${ realName }]`);
             this.log(x.toString());
             
-            // TODO: Error recovery?  Move to next?
+            // If package doesn't have a latest version, then skip it
+            if (x.message.startsWith("HTTP 404"))
+                return;
+            
             throw x;
         }
         
@@ -279,7 +282,18 @@ export class NpmScanner {
     
         this.log(`Clearing package folder [${ packageFolder }]`);
     
-        await wipeout(packageFolder);
+        try { 
+        
+            await wipeout(packageFolder);
+        
+        } catch (x) {
+        
+            if (x.message.startsWith("ENOTEMPTY"))
+                this.log(`Unable to clear package folder - try removing the folder manually`);
+            
+            throw x;
+        }
+        
         await AsyncFS.mkdir(packageFolder);
     
         this.log(`Unpacking archive [${ archive }]`);
@@ -368,13 +382,28 @@ export class NpmScanner {
         await AsyncFS.writeFile(Path.join(this.folder, "data.json"), JSON.stringify(this.data));
     }
     
-    reset() {
+    reset(predicate) {
     
         if (!this.data)
             throw new Error("Package index not loaded");
         
         this.log(`Resetting package data`);
-        Object.keys(this.data).forEach(key => this.data[key] = null);
+        
+        if (typeof predicate !== "function")
+            predicate = null;
+        
+        Object.keys(this.data).forEach(key => {
+        
+            if (predicate && this.data[key] !== null) {
+            
+                var name = key.replace(/^\./, "");
+                
+                if (!predicate(this.data[key], name))
+                    return;
+            }
+            
+            this.data[key] = null;
+        });
     }
     
     log(msg) {

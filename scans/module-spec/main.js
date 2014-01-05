@@ -95,19 +95,32 @@ class Scanner extends NpmScanner {
         
         data.modules += 1;
         
+        text = text.replace(SHEBANG, "");
+        
         try {
         
-            ast = parseScript("function m() { \n" + text.replace(SHEBANG, "") + "\n }");
+            ast = parseScript("function m() { \n" + text + "\n }");
             
         } catch (x) {
         
             data.parseErrors += 1;
-        
+            
             // Continue to next module
             this.log(`Error parsing module [${ path }]`);
-            this.log(`  ${ x.toString() }`);
+            this.log(`  ${ x.toString() } [${ x.line }:${ x.column }]`);
+        
+            try {
             
-            return;
+                // Attempt to parse with V8, instead
+                new Function(text);
+            
+            } catch (x) {
+            
+                // If V8 cannot parse it, then skip the module
+                return;
+            }
+            
+            throw x;
         }
         
         visit(ast);
@@ -164,6 +177,13 @@ export async main() {
         return;
     }
     
+    if (arg === "reset-parse-errors") {
+    
+        scanner.reset(data => data.parseErrors > 0);
+        await scanner.close();
+        return;
+    }
+    
     if (arg === "report") {
     
         await report(scanner.data);
@@ -174,7 +194,7 @@ export async main() {
     
         for (var i = 0; i < count; ++i) {
         
-            if (i > 0) await delay(2000);
+            if (i > 0) await delay(500);
             await scanner.next();
         }
     
@@ -217,16 +237,20 @@ async report(data) {
     var allPackage = sum.platform + sum.package;
     var total = sum.platform + sum.package + sum.relative + sum.absolute;
     
-    console.log(`\n=== Module Specifier Analysis ===\n`);
-    console.log(`Packages Scanned: ${ packages }`);
-    console.log(`Modules Scanned: ${ sum.modules }`);
-    console.log(`Average Modules per Package: ${ sum.modules / packages | 0 }`);
-    console.log(`Parse Errors: ${ sum.parseErrors }`);
-    console.log(`Relative: ${ formatCount(sum.relative) }`);
-    console.log(`System: ${ formatCount(sum.platform) }`);
-    console.log(`Package: ${ formatCount(sum.package) }`);
-    console.log(`Non-Relative: ${ formatCount(sum.platform + sum.package) }`);
-    console.log('');
+    _(`\n=== Module Specifier Analysis ===\n`);
+    _(`Packages Scanned: ${ packages }`);
+    _(`Modules Scanned: ${ sum.modules }`);
+    _(`Parse Errors: ${ sum.parseErrors }`);
+    _(`Relative: ${ formatCount(sum.relative) }`);
+    _(`System: ${ formatCount(sum.platform) }`);
+    _(`Package: ${ formatCount(sum.package) }`);
+    _(`Non-Relative: ${ formatCount(sum.platform + sum.package) }`);
+    _('');
+    
+    function _(msg) {
+    
+        console.log(msg);
+    }
     
     function formatCount(n) {
         
