@@ -186,7 +186,7 @@ export async main() {
     
     if (arg === "report") {
     
-        await report(scanner.data);
+        report(scanner.data);
         return;
     }
     
@@ -197,6 +197,8 @@ export async main() {
             if (i > 0) await delay(500);
             await scanner.next();
         }
+        
+        report(scanner.data);
     
     } finally {
     

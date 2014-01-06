@@ -248,8 +248,11 @@ export class NpmScanner {
             this.log(x.toString());
             
             // If package doesn't have a latest version, then skip it
-            if (x.message.startsWith("HTTP 404"))
+            if (x.message.startsWith("HTTP 404")) {
+            
+                this.data[name] = { error: "Package metadata does not exist" };
                 return;
+            }
             
             throw x;
         }
@@ -274,7 +277,12 @@ export class NpmScanner {
             this.log(`Error occured while downloading archive`);
             this.log(x.toString());
             
-            // TODO: Error recovery?  Move to next?
+            if (x.message.startsWith("HTTP 404")) {
+            
+                this.data[name] = { error: "Archive does not exist" };
+                return;
+            }
+            
             throw x;
         }
         
