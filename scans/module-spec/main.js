@@ -109,6 +109,10 @@ class Scanner extends NpmScanner {
             this.log(`Error parsing module [${ path }]`);
             this.log(`  ${ x.toString() } [${ x.line }:${ x.column }]`);
         
+            // ES6 does not allow call expressions on LHS of assignment
+            if (x.message === "Invalid left-hand side in assignment")
+                return;
+            
             try {
             
                 // Attempt to parse with V8, instead
