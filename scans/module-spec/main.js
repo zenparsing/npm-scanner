@@ -210,7 +210,7 @@ export async main() {
     }
 }
 
-async report(data) {
+function report(data) {
 
     var sum = {
     
