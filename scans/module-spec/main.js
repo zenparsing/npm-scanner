@@ -222,9 +222,10 @@ function report(data) {
         parseErrors: 0
     };
     
-    var packages = 0;
+    var packages = 0,
+        packageList = Object.keys(data);
     
-    Object.keys(data).forEach(key => {
+    packageList.forEach(key => {
     
         var item = data[key];
         
@@ -244,7 +245,7 @@ function report(data) {
     var total = sum.platform + sum.package + sum.relative + sum.absolute;
     
     _(`\n=== Module Specifier Analysis ===\n`);
-    _(`Packages Scanned: ${ packages }`);
+    _(`Packages Scanned: ${ packages } (${ (packages / packageList.length * 100).toFixed(1) }%)`);
     _(`Modules Scanned: ${ sum.modules }`);
     _(`Parse Errors: ${ sum.parseErrors }`);
     _(`Relative: ${ formatCount(sum.relative) }`);
@@ -260,6 +261,6 @@ function report(data) {
     
     function formatCount(n) {
         
-        return `${ n } (${ n / total * 100 | 0 }%)`;
+        return `${ n } (${ (n / total * 100).toFixed(1) }%)`;
     }
 }

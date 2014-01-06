@@ -123,7 +123,7 @@ async unpack(path, dest) {
             if (code) reject(new Error(`tar command exited with error code ${ code }`));
             else resolve(code);
         });
-    });
+    }); 
 }
 
 function rand(min, max) {
@@ -424,3 +424,4 @@ export class NpmScanner {
         return {};
     }
 }
+
