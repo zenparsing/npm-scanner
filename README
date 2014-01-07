@@ -1,0 +1,4 @@
+=== npm-scanner ===
+
+A small library for performing static analysis on the NPM registry.
+See the "scans" folder for examples of use.

@@ -1,0 +1,4 @@
+== TODO ==
+
+- Eliminate dependency on OS "tar" command.  Port "node-tar" into "zipt"
+  project and rename it "ziptar".
