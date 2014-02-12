@@ -4,8 +4,8 @@ module URL from "node:url";
 module Path from "node:path";
 module FS from "node:fs";
 
-import { spawn } from "node:child_process";
 import { AsyncFS } from "package:zen-bits";
+import { untar } from "package:ziptar";
 
 async traverseFileSystem(path, fn) {
 
@@ -106,24 +106,7 @@ async http(method, url, options) {
 
 async unpack(path, dest) {
 
-    path = Path.resolve(path);
-    dest = Path.resolve(dest);
-    
-    return new Promise((resolve, reject) => {
-    
-        var child = spawn("tar", ["xfz", path], {
-
-            cwd: dest,
-            env: process.env,
-            stdio: "inherit"
-        });
-
-        child.on("exit", code => {
-
-            if (code) reject(new Error(`tar command exited with error code ${ code }`));
-            else resolve(code);
-        });
-    }); 
+    return untar(path, dest, true);
 }
 
 function rand(min, max) {
