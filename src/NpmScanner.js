@@ -1,48 +1,22 @@
-module HTTP from "node:http";
-module HTTPS from "node:https";
-module URL from "node:url";
-module Path from "node:path";
-module FS from "node:fs";
+var HTTP = require("http");
+var HTTPS = require("https");
+var URL = require("url");
+var Path = require("path");
+var FS = require("fs");
 
-import { AsyncFS } from "package:zen-bits";
-import { untar } from "package:ziptar";
+import { File, Directory } from "package:afs";
+import { Pipe, NodeStream, StringDecoder } from "package:streamware";
+import { extract } from "package:ziptar";
 
-async traverseFileSystem(path, fn) {
+function asyncHandler(fn) {
 
-    path = Path.resolve(path);
+    return (...args) => {
     
-    var list = [];
-    
-    try { list = await AsyncFS.readdir(path) }
-    catch (x) { }
-
-    for (var i = 0; i < list.length; ++i)
-        await traverseFileSystem(Path.join(path, list[i]), fn);
-    
-    if (await AsyncFS.exists(path))
-        await fn(path);
+        fn(...args).then(null, err => { setTimeout($=> { throw err }, 0) });
+    };
 }
 
-async wipeout(path) {
-
-    await traverseFileSystem(path, path => { 
-    
-        var stat;
-        
-        try { stat = await AsyncFS.stat(path) }
-        catch (x) { }
-        
-        if (!stat)
-            return;
-        
-        if (stat.isDirectory())
-            await AsyncFS.rmdir(path);
-        else
-            await AsyncFS.unlink(path);
-    });
-}
-
-async http(method, url, options) {
+function http(method, url, options) {
 
     return new Promise((resolve, reject) => {
     
@@ -68,7 +42,7 @@ async http(method, url, options) {
         
         requestInfo.headers = headers;
         
-        var request = makeRequest(requestInfo, response => {
+        var request = makeRequest(requestInfo, asyncHandler(async response => {
 
             if (response.statusCode !== 200) {
             
@@ -76,37 +50,29 @@ async http(method, url, options) {
                 return;
             }
             
+            var inStream = new NodeStream(response);
+            
             if (options.file) {
             
                 if (Path.basename(options.file) === "*")
                     options.file = options.file.replace(/\*$/, Path.basename(requestInfo.pathname));
                 
-                var filePath = Path.resolve(options.file);
-                var file = FS.createWriteStream(filePath);
-                
-                response.pipe(file);
-                file.on("finish", $=> resolve(filePath));
-                
-                return;
+                var file = await File.openWrite(Path.resolve(options.file));
+                await Pipe.start(inStream, file, { end: true });
+                resolve(file.path);
+    
+            } else {
+            
+                var decoder = new StringDecoder;
+                await Pipe.start(inStream, decoder, { end: true });
+                resolve(await decoder.read());
             }
             
-            var body = "";
-            
-            response.setEncoding("utf8");
-                        
-            response.on("data", data => body += data);
-            response.on("end", $=> resolve(body));
-        });
+        }));
 
         request.on("error", err => reject(err));
         request.end();
-    });
-    
-}
-
-async unpack(path, dest) {
-
-    return untar(path, dest, true);
+    });   
 }
 
 function rand(min, max) {
@@ -141,14 +107,8 @@ export class NpmScanner {
         var dest = Path.resolve(this.folder),
             stat;
     
-        try { stat = await AsyncFS.stat(dest) }
-        catch (x) {}
-    
-        if (!stat || !stat.isDirectory()) {
-    
-            this.log(`Creating target directory [${ dest }]`);
-            await AsyncFS.mkdir(dest);
-        }
+        this.log(`Creating target directory [${ dest }]`);
+        Directory.create(dest);
     
         this.log(`Fetching package index from NPM registry (this may take several minutes)`);
         var response = await http("GET", "https://registry.npmjs.org/-/all");
@@ -242,10 +202,10 @@ export class NpmScanner {
         
         this.log(`Clearing old archive files`);
         
-        await traverseFileSystem(this.folder, path => {
+        await Directory.traverse(this.folder, async path => {
         
             if ((/\.t(ar\.)?gz$/i).test(path))
-                await AsyncFS.unlink(path);
+                await File.delete(path);
         });
         
         this.log(`Downloading package archive [${ tarball }]`);
@@ -275,7 +235,7 @@ export class NpmScanner {
     
         try { 
         
-            await wipeout(packageFolder);
+            await Directory.delete(packageFolder, true);
         
         } catch (x) {
         
@@ -285,10 +245,10 @@ export class NpmScanner {
             throw x;
         }
         
-        await AsyncFS.mkdir(packageFolder);
+        await Directory.create(packageFolder);
     
         this.log(`Unpacking archive [${ archive }]`);
-        await unpack(archive, packageFolder);
+        await extract(archive, packageFolder);
         
         this.log(`Analyzing package`);
         var result = await this.processPackage(realName, packageFolder);
@@ -314,7 +274,7 @@ export class NpmScanner {
         this.log(`Attempting to read index file [${ path }]`);
         
         // Attempt to read the index file
-        try { content = await AsyncFS.readFile(path, { encoding: "utf8" }) }
+        try { content = await File.readText(path) }
         catch (x) { }
         
         // If the index does not exist, then attempt to initialize the folder
@@ -344,17 +304,10 @@ export class NpmScanner {
     
         var data = this.createPackageData();
         
-        await traverseFileSystem(path, path => {
+        await Directory.traverse(path, async path => {
         
-            var stat;
-            
-            try { stat = await AsyncFS.stat(path) }
-            catch (x) { }
-            
-            if (!stat || !stat.isFile())
-                return;
-            
-            await this.processFile(name, path, data);
+            if (File.exists(path))
+                await this.processFile(name, path, data);
         });
         
         return data;
@@ -365,12 +318,17 @@ export class NpmScanner {
         throw new Error("Not implemented");
     }
     
+    async readFile(path, encoding) {
+    
+        return encoding ? File.readText(path, encoding) : File.readBytes(path);
+    }
+    
     async save() {
     
         if (!this.data)
             throw new Error("Package index not loaded");
         
-        await AsyncFS.writeFile(Path.join(this.folder, "data.json"), JSON.stringify(this.data));
+        await File.writeText(Path.join(this.folder, "data.json"), JSON.stringify(this.data));
     }
     
     reset(predicate) {

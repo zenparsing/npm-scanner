@@ -1,8 +1,7 @@
-module Path from "node:path";
+var Path = require("path");
 
 import { NpmScanner } from "../../src/NpmScanner.js";
-import { parseScript } from "package:es6parse";
-import { AsyncFS } from "package:zen-bits";
+import { parse } from "package:esparse";
 
 var NODE_LIB = [
 
@@ -90,7 +89,7 @@ class Scanner extends NpmScanner {
         if (Path.extname(path).toLowerCase() !== ".js")
             return;
         
-        var text = await AsyncFS.readFile(path, { encoding: "utf8" }),
+        var text = await this.readFile(path, "utf8"),
             ast = null;
         
         data.modules += 1;
@@ -99,7 +98,7 @@ class Scanner extends NpmScanner {
         
         try {
         
-            ast = parseScript("function m() { \n" + text + "\n }");
+            ast = parse("function m() { \n" + text + "\n }", { module: false });
             
         } catch (x) {
         
@@ -132,7 +131,7 @@ class Scanner extends NpmScanner {
         function visit(node) {
         
             // Depth first traversal
-            node.forEachChild(visit);
+            node.children().forEach(visit);
             
             if (node.type !== "CallExpression")
                 return;
@@ -161,12 +160,12 @@ class Scanner extends NpmScanner {
     
 }
 
-async delay(ms) {
+function delay(ms) {
 
     return new Promise(resolve => setTimeout($=> resolve(null), ms));
 }
 
-export async main() {
+export async function main() {
 
     var scanner = new Scanner(Path.join(__dirname, "_work")),
         arg = process.argv[2] || "",
@@ -198,6 +197,7 @@ export async main() {
     
         for (var i = 0; i < count; ++i) {
         
+            console.log("");
             if (i > 0) await delay(500);
             await scanner.next();
         }
@@ -229,7 +229,7 @@ function report(data) {
     
         var item = data[key];
         
-        if (!item || !item.modules)
+        if (!item || typeof item.modules !== "number")
             return;
     
         packages += 1;
