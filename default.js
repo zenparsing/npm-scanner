@@ -1,1 +1,1 @@
-export * from "./src/";
+export { NpmScanner } from "./src/NpmScanner.js";

@@ -1,28 +1,25 @@
-var HTTP = require("http");
-var HTTPS = require("https");
-var URL = require("url");
-var Path = require("path");
-var FS = require("fs");
+import * as HTTP from "node:http";
+import * as HTTPS from "node:https";
+import * as URL from "node:url";
+import * as Path from "node:path";
 
 import { File, Directory } from "zen-fs";
-import { Pipe, NodeStream, StringDecoder } from "streamware";
-import { extract } from "ziptar";
+import { wrapNode, decodeText, concatText } from "streamware";
+import { extract, listEntries } from "ziptar";
 
 function asyncHandler(fn) {
 
     return (...args) => {
 
-        fn(...args).then(null, err => { setTimeout($=> { throw err }, 0) });
+        fn(...args).then(null, err => { setTimeout(_=> { throw err }, 0) });
     };
 }
 
-function http(method, url, options) {
+export function http(method, url, options = {}) {
 
     return new Promise((resolve, reject) => {
 
-        options = options || {};
-
-        var requestInfo = URL.parse(url),
+        let requestInfo = URL.parse(url),
             makeRequest;
 
         switch (requestInfo.protocol.toLowerCase()) {
@@ -32,17 +29,17 @@ function http(method, url, options) {
             default: throw new Error("Invalid protocol");
         }
 
-        var headers = options.headers || {};
+        let headers = options.headers || {};
 
         if (!headers.Host)
-            headers.Host = options.hostname;
+            headers.Host = requestInfo.hostname;
 
         if (!headers.Cookie)
             headers.Cookie = "";
 
         requestInfo.headers = headers;
 
-        var request = makeRequest(requestInfo, asyncHandler(async response => {
+        let request = makeRequest(requestInfo, asyncHandler(async response => {
 
             if (response.statusCode !== 200) {
 
@@ -50,22 +47,22 @@ function http(method, url, options) {
                 return;
             }
 
-            var inStream = new NodeStream(response);
+            let inStream = wrapNode(response),
+                filePath = options.file;
 
-            if (options.file) {
+            if (filePath) {
 
-                if (Path.basename(options.file) === "*")
-                    options.file = options.file.replace(/\*$/, Path.basename(requestInfo.pathname));
+                filePath = Path.resolve(filePath);
 
-                var file = await File.openWrite(Path.resolve(options.file));
-                await Pipe.start(inStream, file, { end: true });
-                resolve(file.path);
+                if (Path.basename(filePath) === "*")
+                    filePath = filePath.replace(/\*$/, Path.basename(requestInfo.pathname));
+
+                await File.write(inStream, filePath);
+                resolve(filePath);
 
             } else {
 
-                var decoder = new StringDecoder;
-                await Pipe.start(inStream, decoder, { end: true });
-                resolve(await decoder.read());
+                resolve(await inStream::decodeText()::concatText());
             }
 
         }));
@@ -88,10 +85,7 @@ function rand(min, max) {
 
 export class NpmScanner {
 
-    constructor(folder) {
-
-        if (this.folder)
-            throw new Error("Already open");
+    constructor(folder, options = {}) {
 
         if (typeof folder !== "string" || !folder)
             throw new Error("Invalid folder");
@@ -100,24 +94,25 @@ export class NpmScanner {
         this.data = null;
         this.packageList = null;
         this.position = 0;
+        this.options = options;
     }
 
     async initialize() {
 
-        var dest = Path.resolve(this.folder),
+        let dest = Path.resolve(this.folder),
             stat;
 
         this.log(`Creating target directory [${ dest }]`);
         Directory.create(dest);
 
         this.log(`Fetching package index from NPM registry (this may take several minutes)`);
-        var response = await http("GET", "https://registry.npmjs.org/-/all");
+        let response = await http("GET", "https://registry.npmjs.org/-/all");
 
         this.log(`Parsing JSON response`);
-        var data; try { data = JSON.parse(response); }
+        let data; try { data = JSON.parse(response); }
         catch (x) { console.log(response.slice(0, 512)); throw x; }
 
-        var list = [], length = 0;
+        let list = [], length = 0;
 
         this.log(`Generating shuffled list of package names`);
         Object.keys(data).forEach(key => {
@@ -132,7 +127,7 @@ export class NpmScanner {
             if (key | 0 == key)
                 key = "." + key;
 
-            var r = rand(length);
+            let r = rand(length);
 
             list[length++] = list[r];
             list[r] = key;
@@ -152,7 +147,7 @@ export class NpmScanner {
         if (!this.data)
             await this.open();
 
-        var name = "";
+        let name = "";
 
         while (this.position < this.packageList.length) {
 
@@ -172,7 +167,7 @@ export class NpmScanner {
         if (!this.data)
             await this.open();
 
-        var name = "";
+        let name = "";
 
         while (this.position < this.packageList.length) {
 
@@ -186,19 +181,19 @@ export class NpmScanner {
             return false;
 
         // Remove leading dot from key name to get the real package name
-        var realName = name.replace(/^\./, "");
+        let realName = name.replace(/^\./, "");
 
-        var pct = (this.position / this.packageList.length * 100).toFixed(1);
+        let pct = (this.position / this.packageList.length * 100).toFixed(1);
         this.log(`Processing package ${ realName } (${ this.position } of ${ this.packageList.length }, ${ pct }%)`);
 
-        var infoURL = `https://registry.npmjs.org/${ realName }/latest`;
+        let infoURL = `https://registry.npmjs.org/${ realName }/latest`;
         this.log(`Downloading package metadata [${ infoURL }]`);
 
-        var tarball = null;
+        let tarball = null;
 
         try {
 
-            var info = JSON.parse(await http("GET", infoURL));
+            let info = JSON.parse(await http("GET", infoURL));
 
             if (!(info.dist && info.dist.tarball))
                 throw new Error("Metadata does not contain an archive reference");
@@ -229,7 +224,7 @@ export class NpmScanner {
         });
 
         this.log(`Downloading package archive [${ tarball }]`);
-        var archive = null;
+        let archive = null;
 
         try {
 
@@ -249,7 +244,30 @@ export class NpmScanner {
             throw x;
         }
 
-        var packageFolder = Path.join(this.folder, "package");
+        this.log(`Analyzing package`);
+        let packageData = this.createPackageData();
+
+        if (this.options.extract) {
+
+            await this.processPackage(realName, archive, packageData);
+
+        } else {
+
+            let packageInfo = { name: realName };
+
+            for (let entry of await listEntries(archive))
+                await this.processFile(entry.name, packageData, packageInfo);
+        }
+
+        this.data[name] = packageData;
+        this.log(`Analysis complete`);
+
+        return true;
+    }
+
+    async processPackage(name, archivePath, data) {
+
+        let packageFolder = Path.join(this.folder, "package");
 
         this.log(`Clearing package folder [${ packageFolder }]`);
 
@@ -267,20 +285,24 @@ export class NpmScanner {
 
         await Directory.create(packageFolder);
 
-        this.log(`Unpacking archive [${ archive }]`);
-        await extract(archive, packageFolder);
+        this.log(`Unpacking archive [${ archivePath }]`);
+        await extract(archivePath, packageFolder);
 
-        this.log(`Analyzing package`);
-        var result = await this.processPackage(realName, packageFolder);
+        let info = { name, path };
 
-        if (result === void 0)
-            result = {};
+        await Directory.traverse(path, async path => {
 
-        this.data[name] = result;
+            // Don't traverse into node_modules folders
+            if (Path.basename(path) === "node_modules")
+                return false;
 
-        this.log(`Analysis complete`);
+            return true;
 
-        return true;
+        }, async path => {
+
+            if (await File.exists(path))
+                await this.processFile(path, data, info);
+        });
     }
 
     async open() {
@@ -288,7 +310,7 @@ export class NpmScanner {
         if (this.data)
             throw new Error("Already open");
 
-        var path = Path.join(this.folder, "data.json"),
+        let path = Path.join(this.folder, "data.json"),
             content = null;
 
         this.log(`Attempting to read index file [${ path }]`);
@@ -315,31 +337,9 @@ export class NpmScanner {
         if (!this.data)
             throw new Error("Not open");
 
-        var p = this.save();
+        let p = this.save();
         this.data = null;
         await p;
-    }
-
-    async processPackage(name, path) {
-
-        var data = this.createPackageData(),
-            info = { name, path };
-
-        await Directory.traverse(path, async path => {
-
-            // Don't traverse into node_modules folders
-            if (Path.basename(path) === "node_modules")
-                return false;
-
-            return true;
-
-        }, async path => {
-
-            if (await File.exists(path))
-                await this.processFile(path, data, info);
-        });
-
-        return data;
     }
 
     async processFile(path, data, packageInfo) {
@@ -349,7 +349,7 @@ export class NpmScanner {
 
     async readFile(path, encoding) {
 
-        return encoding ? File.readText(path, encoding) : File.readBytes(path);
+        return encoding ? File.readText(path, encoding) : File.read(path);
     }
 
     async save() {
@@ -374,7 +374,7 @@ export class NpmScanner {
 
             if (predicate && this.data[key] !== null) {
 
-                var name = key.replace(/^\./, "");
+                let name = key.replace(/^\./, "");
 
                 if (!predicate(this.data[key], name))
                     return;
@@ -394,4 +394,3 @@ export class NpmScanner {
         return {};
     }
 }
-
